@@ -1,0 +1,87 @@
+name: candidate_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_maps_flutter: ^2.4.5
+  geolocator: 14.0.2
+  geocoding: ^4.0.0
+  cupertino_icons: ^1.0.8
+  fluttertoast: ^9.0.0
+  validators: ^3.0.0
+  http: ^1.2.2
+  shared_preferences: ^2.2.3
+  url_launcher: ^6.1.12
+  image_picker: ^1.1.2
+  fl_chart: ^1.1.1
+  intl: ^0.19.0
+  camera: ^0.11.2+1
+  path_provider: ^2.0.15
+  rename: ^3.1.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_polyline_points: ^3.1.0
+  google_places_flutter: ^2.0.7
+  location: ^8.0.1
+  lottie: ^3.1.0
+  permission_handler: ^12.0.1
+  cached_network_image: ^3.2.3
+  provider: ^6.1.2
+  flutter_typeahead: ^5.2.0
+  flutter_animate: ^4.2.0
+  flutter_map: ^7.0.0
+  latlong2: ^0.9.0
+  flutter_map_geojson: ^1.0.0-dev.2
+  maplibre_gl: ^0.24.1
+  maplibre_gl_platform_interface: ^0.24.1
+  maplibre_gl_web: ^0.24.1
+  flutter_svg: ^2.0.9
+  dropdown_search: ^5.0.6
+  timeago: ^3.6.1
+  get: ^4.6.6
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/logo.png
+    - assets/home1.png
+    - assets/home2.png
+    - assets/home3.png
+    - assets/back_button.png
+    - assets/states_districts.json
+    - assets/india_flag.jpg
+    - assets/india_bg.png
+    - assets/maps/india_states.geojson
+    - assets/maps/blank_style.json
+    - assets/logo_circle.png
+    - assets/admin_avatar.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  web:
+    generate: true
+    image_path: "assets/logo.png"
+    background_color: "#ffffff"
+    theme_color: "#ffffff"
+
+  windows:
+    generate: true
+    image_path: "assets/logo.png"
+
+  image_path: "assets/logo.png"
+  min_sdk_android: 21

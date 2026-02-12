@@ -3,6 +3,7 @@ import 'login_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:candidate_app/screens/candidate_actions_page.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'all_voting_status_page.dart';
 
 /// Utility to format large numbers
 String formatNumber(int number) {
@@ -182,41 +183,18 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // KPI Grid
-                  GridView(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 1.15,
-                        ),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      StatCard(
-                        title: 'Polling Booths',
-                        value: polls.toString(),
-                        icon: Icons.how_to_vote,
-                        color: primary,
-                        background: Colors.white,
-                      ),
-                      StatCard(
-                        title: 'Votes Casted',
-                        value: formatNumber(votesCasted),
-                        icon: Icons.done_all,
-                        color: Colors.green,
-                        background: Colors.white,
-                      ),
-                      StatCard(
-                        title: 'Votes Pending',
-                        value: formatNumber(votesPending),
-                        icon: Icons.pending_actions,
-                        color: Colors.redAccent,
-                        background: Colors.white,
-                      ),
-                    ],
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: StatCard(
+                      title: 'Polling Booths',
+                      value: polls.toString(),
+                      icon: Icons.how_to_vote,
+                      color: primary,
+                      background: Colors.white,
+                    ),
                   ),
+
                   const SizedBox(height: 20),
                   // Voting Status Card
                   Card(
@@ -255,6 +233,19 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                                   progress:
                                       votesCasted /
                                       (votesCasted + votesPending),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => AllVotingStatusPage(
+                                          state: "Maharashtra",
+                                          district: "Mumbai",
+                                          city: "Mumbai City",
+                                          area: "Colaba",
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -267,6 +258,19 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                                   progress:
                                       votesPending /
                                       (votesCasted + votesPending),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => AllVotingStatusPage(
+                                          state: "Maharashtra",
+                                          district: "Mumbai",
+                                          city: "Mumbai City",
+                                          area: "Colaba",
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ],
@@ -811,6 +815,7 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
 // Voting Status Card
 class _VotingStatusCard extends StatelessWidget {
+  final VoidCallback? onTap;
   final String title;
   final String value;
   final Color color;
@@ -823,69 +828,74 @@ class _VotingStatusCard extends StatelessWidget {
     required this.color,
     required this.icon,
     this.progress = 0,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(icon, color: color, size: 26),
                 ),
-                padding: const EdgeInsets.all(8),
-                child: Icon(icon, color: color, size: 26),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      value,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: color,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        value,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: color,
+                        ),
                       ),
-                    ),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: progress,
-            backgroundColor: color.withOpacity(0.2),
-            color: color,
-            minHeight: 6,
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: color.withOpacity(0.2),
+              color: color,
+              minHeight: 6,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// KPI Card
 class StatCard extends StatelessWidget {
   const StatCard({
     super.key,
@@ -909,25 +919,41 @@ class StatCard extends StatelessWidget {
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+
+        child: Row(
           children: [
-            _IconBadge(icon: icon, color: color),
-            const Spacer(),
+            /// ICON
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+
+            const SizedBox(width: 18),
+
+            /// NUMBER
             Text(
               value,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w900,
                 color: color,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
+
+            const SizedBox(width: 14),
+
+            /// TITLE
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
               ),
             ),
           ],

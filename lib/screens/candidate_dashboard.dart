@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:candidate_app/screens/candidate_actions_page.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'all_voting_status_page.dart';
+import 'package:flutter/gestures.dart';
 
 /// Utility to format large numbers
 String formatNumber(int number) {
@@ -39,7 +40,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
   int _currentIndex = 0;
 
-  late TransformationController _transformationController;
   bool _isPanEnabled = true;
   bool _isScaleEnabled = true;
 
@@ -48,11 +48,70 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
   String candidateVoterId = "VOTER0000";
 
   double minX = 0;
-  double maxX = 6;
+  double maxX = 1800;
+
+  double totalTimelineSeconds = 1800;
+
+  final DateTime graphStartTime = DateTime(2026, 1, 1, 9, 0); // 9:00 AM
+
+  String _selectedRange = "30m";
+
+  double? crosshairX;
+
+  double _lastScale = 1.0;
+
+  final GlobalKey _chartKey = GlobalKey();
+
+  void _handleZoom(ScaleUpdateDetails details) {
+    double zoomFactor = details.scale / _lastScale;
+    _lastScale = details.scale;
+
+    double range = maxX - minX;
+
+    double newRange = (range / zoomFactor).clamp(60.0, totalTimelineSeconds);
+
+    double focalPercent = details.localFocalPoint.dx / context.size!.width;
+
+    double focalX = minX + range * focalPercent;
+
+    double newMinX = focalX - newRange * focalPercent;
+    double newMaxX = newMinX + newRange;
+
+    newMinX = newMinX.clamp(0, totalTimelineSeconds - newRange);
+
+    newMaxX = newMinX + newRange;
+
+    setState(() {
+      minX = newMinX;
+      maxX = newMaxX;
+    });
+  }
+
+  Future<void> _refreshGraph() async {
+    // 🔥 OPTIONAL: show loading if you want
+    // setState(() => isLoading = true);
+
+    /// STEP 1 — Fetch new data from DB/API
+    /// Replace this with your real API call later
+
+    /// STEP 2 — Reset zoom view
+    setState(() {
+      minX = 0;
+      maxX = 1800;
+
+      minY = 0;
+      maxY = 4000;
+
+      crosshairX = null;
+      _lastScale = 1.0;
+    });
+  }
+
   double minY = 0;
   double maxY = 4000;
 
   double _getNiceInterval(double range) {
+    if (range <= 0) return 1;
     double roughStep = range / 5;
 
     if (roughStep <= 10) return 10;
@@ -67,40 +126,127 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
     return (roughStep / 1000).ceil() * 1000;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // IMPROVED: Much more granular interval steps so labels never crowd or gap
+  // ─────────────────────────────────────────────────────────────────────────
+  double _getTimeInterval() {
+    double range = maxX - minX;
+
+    // ultra zoom
+    if (range <= 600) return 60; // every 1 min
+
+    // 30 minute view
+    if (range <= 1800) return 300; // every 5 min
+
+    // 1 hour view
+    if (range <= 3600) return 600; // every 10 min
+
+    // 3 hour view
+    if (range <= 10800) return 1800; // every 30 min
+
+    // 5 hour view
+    if (range <= 18000) return 3600; // every 1 hour
+
+    return 3600;
+  }
+
+  void _changeGraphRange(String range) {
+    setState(() {
+      _selectedRange = range;
+
+      switch (range) {
+        case "5h":
+          totalTimelineSeconds = 5 * 3600;
+          break;
+
+        case "3h":
+          totalTimelineSeconds = 3 * 3600;
+          break;
+
+        case "1h":
+          totalTimelineSeconds = 3600;
+          break;
+
+        case "30m":
+        default:
+          totalTimelineSeconds = 1800;
+      }
+
+      /// reset viewport
+      minX = 0;
+      maxX = totalTimelineSeconds;
+
+      crosshairX = null;
+      _lastScale = 1.0;
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // IMPROVED: Smart time formatting based on visible range
+  // ─────────────────────────────────────────────────────────────────────────
+  String _formatTime(double seconds) {
+    final DateTime actualTime = graphStartTime.add(
+      Duration(seconds: seconds.toInt()),
+    );
+
+    final int hour = actualTime.hour;
+    final int minute = actualTime.minute;
+
+    return "$hour:${minute.toString().padLeft(2, '0')}";
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // NEW: Decide whether a label should be shown at this value.
+  // Skips every-other label when spacing gets tight to prevent overlap.
+  // ─────────────────────────────────────────────────────────────────────────
+  bool _shouldShowLabel(double value) {
+    double interval = _getTimeInterval();
+    double range = maxX - minX;
+
+    // Always show if it aligns to the interval
+    if ((value % interval).abs() > 0.5) return false;
+
+    // On tight zooms show every label; on wide views thin them out
+    if (range > 1200) {
+      // Show only every 2nd interval label (i.e., every 10 min at 5-min intervals)
+      double bigInterval = interval * 2;
+      return (value % bigInterval).abs() < 0.5;
+    }
+
+    return true;
+  }
+
   /// 🟢 Total voters vote casted
   final List<FlSpot> totalVotingData = [
     FlSpot(0, 400),
-    FlSpot(1, 900),
-    FlSpot(2, 1500),
-    FlSpot(3, 2100),
-    FlSpot(4, 2700),
-    FlSpot(5, 3100),
-    FlSpot(6, 3500),
+    FlSpot(300, 900),
+    FlSpot(600, 1500),
+    FlSpot(900, 2100),
+    FlSpot(1200, 2700),
+    FlSpot(1500, 3100),
+    FlSpot(1800, 3500),
   ];
 
   /// 🟠 Our voters vote casted
   final List<FlSpot> ourVotingData = [
     FlSpot(0, 200),
-    FlSpot(1, 450),
-    FlSpot(2, 900),
-    FlSpot(3, 1300),
-    FlSpot(4, 1700),
-    FlSpot(5, 2100),
-    FlSpot(6, 2500),
+    FlSpot(300, 450),
+    FlSpot(600, 900),
+    FlSpot(900, 1300),
+    FlSpot(1200, 1700),
+    FlSpot(1500, 2100),
+    FlSpot(1800, 2500),
   ];
 
   @override
   void initState() {
     super.initState();
-    _transformationController = TransformationController();
-    _transformationController.addListener(_updateYAxis);
     _loadCandidateData();
     _loadDummyDashboardData();
   }
 
   @override
   void dispose() {
-    _transformationController.dispose();
     super.dispose();
   }
 
@@ -116,9 +262,9 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
   void _loadDummyDashboardData() {
     setState(() {
-      polls = 12; // dummy polling booths
-      votesCasted = 3500; // dummy votes casted
-      votesPending = 1200; // dummy votes pending
+      polls = 12;
+      votesCasted = 3500;
+      votesPending = 1200;
       isLoading = false;
     });
   }
@@ -140,7 +286,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
     }
     return AppBar(
       automaticallyImplyLeading: _currentIndex == 0,
-
       title: Text(title),
       backgroundColor: Colors.blue,
       centerTitle: true,
@@ -153,7 +298,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
         return _dashboardBody();
       case 1:
         return const CandidateActionsPage();
-
       case 2:
         return _profilePage();
       default:
@@ -162,6 +306,8 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
   }
 
   Widget _dashboardBody() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isDesktop = screenWidth > 900;
     final Color primary = Theme.of(context).colorScheme.primary;
 
     return isLoading
@@ -172,179 +318,183 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
               controller: scrollController,
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Overview',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: StatCard(
-                      title: 'Polling Booths',
-                      value: polls.toString(),
-                      icon: Icons.how_to_vote,
-                      color: primary,
-                      background: Colors.white,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-                  // Voting Status Card
-                  Card(
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.how_to_reg, color: Colors.blueAccent),
-                              SizedBox(width: 8),
-                              Text(
-                                "Voting Status",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _VotingStatusCard(
-                                  title: "Votes Casted",
-                                  value: formatNumber(votesCasted),
-                                  color: Colors.green,
-                                  icon: Icons.done_all,
-                                  progress:
-                                      votesCasted /
-                                      (votesCasted + votesPending),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => AllVotingStatusPage(
-                                          state: "Maharashtra",
-                                          district: "Mumbai",
-                                          city: "Mumbai City",
-                                          area: "Colaba",
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _VotingStatusCard(
-                                  title: "Votes Pending",
-                                  value: formatNumber(votesPending),
-                                  color: Colors.redAccent,
-                                  icon: Icons.pending_actions,
-                                  progress:
-                                      votesPending /
-                                      (votesCasted + votesPending),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => AllVotingStatusPage(
-                                          state: "Maharashtra",
-                                          district: "Mumbai",
-                                          city: "Mumbai City",
-                                          area: "Colaba",
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Overview',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
                       ),
-                    ),
+                      const SizedBox(height: 16),
+
+                      isDesktop
+                          ? Row(
+                              children: [
+                                Expanded(
+                                  child: StatCard(
+                                    title: 'Polling Booths',
+                                    value: polls.toString(),
+                                    icon: Icons.how_to_vote,
+                                    color: primary,
+                                    background: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 20),
+                                Expanded(
+                                  child: _buildVotingStatusCardDesktop(),
+                                ),
+                              ],
+                            )
+                          : SizedBox(
+                              width: double.infinity,
+                              child: StatCard(
+                                title: 'Polling Booths',
+                                value: polls.toString(),
+                                icon: Icons.how_to_vote,
+                                color: primary,
+                                background: Colors.white,
+                              ),
+                            ),
+
+                      if (!isDesktop) ...[
+                        const SizedBox(height: 20),
+                        Card(
+                          elevation: 3,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: const [
+                                    Icon(
+                                      Icons.how_to_reg,
+                                      color: Colors.blueAccent,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "Voting Status",
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _VotingStatusCard(
+                                        title: "Votes Casted",
+                                        value: formatNumber(votesCasted),
+                                        color: Colors.green,
+                                        icon: Icons.done_all,
+                                        progress:
+                                            votesCasted /
+                                            (votesCasted + votesPending),
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  AllVotingStatusPage(
+                                                    state: "Maharashtra",
+                                                    district: "Mumbai",
+                                                    city: "Mumbai City",
+                                                    area: "Colaba",
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _VotingStatusCard(
+                                        title: "Votes Pending",
+                                        value: formatNumber(votesPending),
+                                        color: Colors.redAccent,
+                                        icon: Icons.pending_actions,
+                                        progress:
+                                            votesPending /
+                                            (votesCasted + votesPending),
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  AllVotingStatusPage(
+                                                    state: "Maharashtra",
+                                                    district: "Mumbai",
+                                                    city: "Mumbai City",
+                                                    area: "Colaba",
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 20),
+                      _buildVotingGraph(),
+                    ],
                   ),
-
-                  const SizedBox(height: 20),
-
-                  _buildVotingGraph(),
-                ],
+                ),
               ),
             ),
           );
   }
 
-  void _updateYAxis() {
-    final matrix = _transformationController.value;
-
-    final scaleX = matrix.getMaxScaleOnAxis();
-
-    final translationX = matrix.row0[3]; // REAL PAN POSITION
-
-    // Total range
-    const double totalRange = 6;
-
-    // Visible range after zoom
-    double visibleRange = totalRange / scaleX;
-
-    // Calculate left boundary from translation
-    double newMinX = (-translationX / scaleX).clamp(
-      0.0,
-      totalRange - visibleRange,
+  Widget _buildVotingStatusCardDesktop() {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Expanded(
+              child: _VotingStatusCard(
+                title: "Votes Casted",
+                value: formatNumber(votesCasted),
+                color: Colors.green,
+                icon: Icons.done_all,
+                progress: votesCasted / (votesCasted + votesPending),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _VotingStatusCard(
+                title: "Votes Pending",
+                value: formatNumber(votesPending),
+                color: Colors.redAccent,
+                icon: Icons.pending_actions,
+                progress: votesPending / (votesCasted + votesPending),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
-
-    double newMaxX = newMinX + visibleRange;
-
-    final visibleSpots = [
-      ...totalVotingData,
-      ...ourVotingData,
-    ].where((e) => e.x >= newMinX && e.x <= newMaxX);
-
-    if (visibleSpots.isEmpty) return;
-
-    double localMinY = visibleSpots
-        .map((e) => e.y)
-        .reduce((a, b) => a < b ? a : b);
-
-    double localMaxY = visibleSpots
-        .map((e) => e.y)
-        .reduce((a, b) => a > b ? a : b);
-
-    if (newMinX == minX &&
-        newMaxX == maxX &&
-        localMinY == minY &&
-        localMaxY == maxY) {
-      return;
-    }
-
-    setState(() {
-      minX = newMinX;
-      maxX = newMaxX;
-
-      double padding = (localMaxY - localMinY) * 0.1;
-
-      double interval = _getNiceInterval(localMaxY - localMinY);
-
-      minY = ((localMinY - padding) / interval).floor() * interval;
-      minY = minY < 0 ? 0 : minY;
-
-      maxY = ((localMaxY + padding) / interval).ceil() * interval;
-    });
   }
 
   Widget _profilePage() {
@@ -384,14 +534,12 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
           BoxShadow(color: Colors.black.withOpacity(.06), blurRadius: 18),
         ],
       ),
-
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            /// ⭐ PRO HEADER
+            /// Header
             Row(
               children: [
                 Container(
@@ -405,200 +553,373 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
                 const SizedBox(width: 12),
 
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Live Voting Trend",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF0B2C5D),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Live Voting Trend",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0B2C5D),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      "Votes received every 5 minutes",
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
+                      SizedBox(height: 3),
+                      Text(
+                        "Votes received every 5 minutes",
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+
+                /// 🔥 REFRESH BUTTON
+                IconButton(
+                  tooltip: "Refresh & Reset View",
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _refreshGraph,
+                ),
+                PopupMenuButton<String>(
+                  tooltip: "Select Time Range",
+
+                  onSelected: (value) {
+                    _changeGraphRange(value);
+                  },
+
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(value: "5h", child: Text("5 Hour")),
+                    const PopupMenuItem(value: "3h", child: Text("3 Hour")),
+                    const PopupMenuItem(value: "1h", child: Text("1 Hour")),
+                    const PopupMenuItem(value: "30m", child: Text("30 Minute")),
                   ],
+
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: Colors.grey.withOpacity(.1),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(_selectedRange),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
 
             const SizedBox(height: 26),
 
-            AspectRatio(
-              aspectRatio: 1.4,
-              child: LineChart(
-                transformationConfig: FlTransformationConfig(
-                  scaleAxis: FlScaleAxis.horizontal,
-                  minScale: 1.0,
-                  maxScale: 20,
-                  panEnabled: _isPanEnabled,
-                  scaleEnabled: _isScaleEnabled,
-                  transformationController: _transformationController,
-                ),
-                LineChartData(
-                  minX: minX,
-                  maxX: maxX,
-                  minY: minY,
-                  maxY: maxY,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: true,
-                    getDrawingHorizontalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.withOpacity(0.25),
+            SizedBox(
+              key: _chartKey,
+              height: MediaQuery.of(context).size.width > 900 ? 420 : 280,
 
-                        strokeWidth: 1,
-                        dashArray: [6, 6],
-                      );
-                    },
-                    getDrawingVerticalLine: (value) {
-                      return FlLine(
-                        color: Colors.grey.withOpacity(0.25),
+              child: Listener(
+                onPointerSignal: (pointerSignal) {
+                  if (pointerSignal is PointerScrollEvent) {
+                    double zoomFactor = pointerSignal.scrollDelta.dy > 0
+                        ? 1.1 // zoom OUT
+                        : 0.9; // zoom IN
 
-                        strokeWidth: 1,
-                        dashArray: [6, 6],
-                      );
-                    },
-                  ),
+                    double range = maxX - minX;
 
-                  borderData: FlBorderData(show: false),
+                    double newRange = (range * zoomFactor).clamp(
+                      60.0,
+                      totalTimelineSeconds,
+                    );
 
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (spots) {
-                        return spots.map((e) {
-                          return LineTooltipItem(
-                            "${e.y.toInt()} votes",
-                            const TextStyle(color: Colors.white),
-                          );
-                        }).toList();
-                      },
-                    ),
-                  ),
+                    double focalPercent =
+                        pointerSignal.localPosition.dx / context.size!.width;
 
-                  titlesData: FlTitlesData(
-                    show: true,
+                    double focalX = minX + range * focalPercent;
 
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
+                    double newMinX = focalX - newRange * focalPercent;
+                    double newMaxX = newMinX + newRange;
 
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
+                    newMinX = newMinX.clamp(0, totalTimelineSeconds - newRange);
 
-                    leftTitles: AxisTitles(
-                      drawBelowEverything: true,
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 40,
-                        interval: _getNiceInterval(maxY - minY),
+                    newMaxX = newMinX + newRange;
 
-                        getTitlesWidget: (value, meta) {
-                          return Text(
-                            value.toInt().toString(),
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.black54,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+                    setState(() {
+                      minX = newMinX;
+                      maxX = newMaxX;
+                    });
+                  }
+                },
 
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 1,
-                        reservedSize: 30,
-                        getTitlesWidget: (value, meta) {
-                          const times = [
-                            "10:00",
-                            "10:05",
-                            "10:10",
-                            "10:15",
-                            "10:20",
-                            "10:25",
-                            "10:30",
-                          ];
+                onPointerHover: (event) {
+                  final box =
+                      _chartKey.currentContext!.findRenderObject() as RenderBox;
 
-                          if (value.toInt() < times.length) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                times[value.toInt()],
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.black54,
+                  final local = box.globalToLocal(event.position);
+
+                  double percent = local.dx / box.size.width;
+
+                  double range = maxX - minX;
+
+                  setState(() {
+                    crosshairX = minX + (range * percent);
+                  });
+                },
+
+                child: GestureDetector(
+                  // MOBILE PINCH ZOOM
+                  onScaleUpdate: _handleZoom,
+                  onScaleEnd: (_) {
+                    _lastScale = 1.0;
+                  },
+
+                  // DESKTOP + MOBILE DRAG PAN
+                  onHorizontalDragUpdate: (details) {
+                    double range = maxX - minX;
+
+                    double movePercent =
+                        details.delta.dx / MediaQuery.of(context).size.width;
+
+                    double moveAmount = range * movePercent;
+
+                    setState(() {
+                      minX -= moveAmount;
+                      maxX -= moveAmount;
+
+                      minX = minX.clamp(0, totalTimelineSeconds - range);
+
+                      maxX = minX + range;
+                    });
+                  },
+
+                  child: LineChart(
+                    LineChartData(
+                      clipData: FlClipData.all(),
+
+                      minX: minX,
+                      maxX: maxX,
+
+                      minY: minY,
+                      maxY: maxY,
+
+                      extraLinesData: ExtraLinesData(
+                        verticalLines: crosshairX == null
+                            ? []
+                            : [
+                                VerticalLine(
+                                  x: crosshairX!,
+                                  color: Colors.blue,
+                                  strokeWidth: 1.5,
+                                  dashArray: [4, 4],
                                 ),
-                              ),
-                            );
+                              ],
+                      ),
+
+                      // ───────────────────────────────────────────────────────
+                      // IMPROVED: Grid lines only at clean interval boundaries
+                      // ───────────────────────────────────────────────────────
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: true,
+                        getDrawingHorizontalLine: (_) => FlLine(
+                          color: Colors.grey.withOpacity(0.2),
+                          strokeWidth: 1,
+                          dashArray: [6, 6],
+                        ),
+                        getDrawingVerticalLine: (value) {
+                          double interval = _getTimeInterval();
+                          // Only draw at main interval boundaries
+                          if ((value % interval).abs() > 0.5) {
+                            return FlLine(strokeWidth: 0);
                           }
-                          return const SizedBox();
+                          return FlLine(
+                            color: Colors.grey.withOpacity(0.2),
+                            strokeWidth: 1,
+                            dashArray: [6, 6],
+                          );
                         },
                       ),
+
+                      borderData: FlBorderData(show: false),
+
+                      lineTouchData: LineTouchData(
+                        enabled: true,
+                        handleBuiltInTouches: true,
+
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (touchedSpot) => Colors.black87,
+
+                          getTooltipItems: (spots) {
+                            return spots.map((e) {
+                              return LineTooltipItem(
+                                "${e.y.toInt()} votes\n${_formatTime(e.x)}",
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              );
+                            }).toList();
+                          },
+                        ),
+
+                        // POINTER LINE
+                        getTouchedSpotIndicator:
+                            (LineChartBarData barData, List<int> spotIndexes) {
+                              return spotIndexes.map((index) {
+                                return TouchedSpotIndicatorData(
+                                  FlLine(
+                                    color: Colors.blue,
+                                    strokeWidth: 1.5,
+                                    dashArray: [4, 4],
+                                  ),
+                                  FlDotData(show: true),
+                                );
+                              }).toList();
+                            },
+                      ),
+
+                      titlesData: FlTitlesData(
+                        show: true,
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        leftTitles: AxisTitles(
+                          drawBelowEverything: true,
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40,
+                            interval: _getNiceInterval(maxY - minY),
+                            getTitlesWidget: (value, meta) {
+                              final label = formatNumber(value.toInt());
+
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  label,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black54,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                        // ───────────────────────────────────────────────────
+                        // IMPROVED: Smart X-axis labels with overflow guard
+                        // ───────────────────────────────────────────────────
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            // Extra height so rotated/taller labels don't clip
+                            reservedSize: 36,
+                            interval: _getTimeInterval(),
+                            getTitlesWidget: (value, meta) {
+                              /// ✅ SHOW ONLY LABELS INSIDE CURRENT VIEWPORT
+                              if (value < minX || value > maxX) {
+                                return const SizedBox();
+                              }
+
+                              /// ✅ SHOW ONLY CLEAN INTERVAL VALUES
+                              final double interval = _getTimeInterval();
+
+                              if ((value % interval).abs() > 1) {
+                                return const SizedBox();
+                              }
+
+                              final label = _formatTime(value);
+
+                              final double range = maxX - minX;
+
+                              /// Rotate labels when very zoomed in
+                              final bool shouldRotate = range <= 60;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: shouldRotate
+                                    ? Transform.rotate(
+                                        angle: -0.5,
+                                        child: Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.black54,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        label,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                      lineBarsData: [
+                        /// TOTAL VOTES
+                        LineChartBarData(
+                          spots: totalVotingData,
+                          isCurved: true,
+                          barWidth: 3,
+                          color: votesCasted >= ourVotesCasted
+                              ? Colors.green
+                              : Colors.green.shade300,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.green.withOpacity(0.25),
+                                Colors.green.withOpacity(0.0),
+                              ],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                          ),
+                        ),
+
+                        /// OUR VOTES
+                        LineChartBarData(
+                          spots: ourVotingData,
+                          isCurved: true,
+                          barWidth: 3,
+                          color: ourVotesCasted >= (votesCasted * 0.5)
+                              ? Colors.orange
+                              : Colors.orange.shade300,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.withOpacity(0.25),
+                                Colors.orange.withOpacity(0.0),
+                              ],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    duration: const Duration(milliseconds: 120),
                   ),
-
-                  lineBarsData: [
-                    /// TOTAL VOTES (AUTO GREEN INTENSITY)
-                    LineChartBarData(
-                      spots: totalVotingData,
-                      isCurved: true,
-                      barWidth: 3,
-
-                      /// COLOR BASED ON TOTAL VOTES VALUE
-                      color: votesCasted >= ourVotesCasted
-                          ? Colors.green
-                          : Colors.green.shade300,
-
-                      dotData: const FlDotData(show: false),
-
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.green.withOpacity(0.25),
-                            Colors.green.withOpacity(0.0),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                      ),
-                    ),
-
-                    /// OUR VOTES (AUTO ORANGE INTENSITY)
-                    LineChartBarData(
-                      spots: ourVotingData,
-                      isCurved: true,
-                      barWidth: 3,
-
-                      /// COLOR BASED ON PERFORMANCE
-                      color: ourVotesCasted >= (votesCasted * 0.5)
-                          ? Colors.orange
-                          : Colors.orange.shade300,
-
-                      dotData: const FlDotData(show: false),
-
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.orange.withOpacity(0.25),
-                            Colors.orange.withOpacity(0.0),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-                duration: Duration.zero,
               ),
             ),
 
@@ -606,7 +927,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
             Row(
               children: [
-                /// TOTAL VOTERS
                 Expanded(
                   child: _graphStat(
                     "Total Voters",
@@ -615,10 +935,7 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                     Icons.people,
                   ),
                 ),
-
                 const SizedBox(width: 12),
-
-                /// TOTAL VOTES CASTED
                 Expanded(
                   child: _graphStat(
                     "Votes Casted",
@@ -627,10 +944,7 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                     Icons.done_all,
                   ),
                 ),
-
                 const SizedBox(width: 12),
-
-                /// OUR VOTES
                 Expanded(
                   child: _graphStat(
                     "Our Votes",
@@ -641,9 +955,8 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
 
-            /// ⭐ WINNING CHANCE ANALYTICS
+            const SizedBox(height: 24),
             Center(child: _buildWinningChance()),
           ],
         ),
@@ -652,16 +965,12 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
   }
 
   Widget _buildWinningChance() {
-    /// 🔥 CALCULATE WINNING %
     double winningPercent = 0;
-
     if (votesCasted > 0) {
       winningPercent = (ourVotesCasted / votesCasted) * 100;
     }
 
-    /// COLOR LOGIC (Election style)
     Color indicatorColor;
-
     if (winningPercent >= 60) {
       indicatorColor = Colors.green;
     } else if (winningPercent >= 40) {
@@ -680,10 +989,7 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
             color: Color(0xFF0B2C5D),
           ),
         ),
-
         const SizedBox(height: 12),
-
-        /// 🔥 PROGRESS INDICATOR (Professional look)
         Stack(
           alignment: Alignment.center,
           children: [
@@ -697,7 +1003,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
                 color: indicatorColor,
               ),
             ),
-
             Text(
               "${winningPercent.toStringAsFixed(1)}%",
               style: TextStyle(
@@ -708,9 +1013,7 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
             ),
           ],
         ),
-
         const SizedBox(height: 10),
-
         Text(
           winningPercent >= 60
               ? "Strong Lead"
@@ -725,11 +1028,20 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      drawer: _currentIndex == 0 ? _buildDrawer(context) : null,
-      appBar: _buildAppBar(),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final bool isDesktop = screenWidth > 900;
 
-      body: _getBody(),
+    return Scaffold(
+      drawer: !isDesktop
+          ? (_currentIndex == 0 ? _buildDrawer(context) : null)
+          : null,
+      appBar: _buildAppBar(),
+      body: Row(
+        children: [
+          if (isDesktop) SizedBox(width: 260, child: _buildDrawer(context)),
+          Expanded(child: _getBody()),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: Colors.white,
@@ -738,7 +1050,6 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
         onTap: (index) {
           setState(() => _currentIndex = index);
         },
-
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
@@ -754,66 +1065,72 @@ class _CandidateDashboardState extends State<CandidateDashboard> {
     );
   }
 
-  Drawer _buildDrawer(BuildContext context) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(color: Colors.blue),
-            child: SingleChildScrollView(
-              controller: scrollController,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircleAvatar(
-                    radius: 35,
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 50, color: Colors.blue),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    candidateName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    candidateEmail,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Voter ID: $candidateVoterId",
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ],
+  Widget _buildDrawer(BuildContext context) {
+    final bool isDesktop = MediaQuery.of(context).size.width > 900;
+
+    final drawerContent = ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: const BoxDecoration(color: Colors.blue),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircleAvatar(
+                radius: 35,
+                backgroundColor: Colors.white,
+                child: Icon(Icons.person, size: 50, color: Colors.blue),
               ),
-            ),
+              const SizedBox(height: 10),
+              Text(
+                candidateName,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                candidateEmail,
+                style: const TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "Voter ID: $candidateVoterId",
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
-            onTap: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-                (route) => false,
-              );
-            },
-          ),
-        ],
-      ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.logout),
+          title: const Text('Logout'),
+          onTap: () async {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.clear();
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+              (route) => false,
+            );
+          },
+        ),
+      ],
     );
+
+    if (!isDesktop) {
+      return Drawer(child: drawerContent);
+    }
+    return Container(color: Colors.white, child: drawerContent);
   }
 }
 
-// Voting Status Card
+// ─────────────────────────────────────────────────────────────────────────────
+// Supporting widgets (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _VotingStatusCard extends StatelessWidget {
   final VoidCallback? onTap;
   final String title;
@@ -838,7 +1155,6 @@ class _VotingStatusCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(10),
-
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
@@ -920,10 +1236,8 @@ class StatCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-
         child: Row(
           children: [
-            /// ICON
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -932,10 +1246,7 @@ class StatCard extends StatelessWidget {
               ),
               child: Icon(icon, color: color, size: 24),
             ),
-
             const SizedBox(width: 18),
-
-            /// NUMBER
             Text(
               value,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -943,10 +1254,7 @@ class StatCard extends StatelessWidget {
                 color: color,
               ),
             ),
-
             const SizedBox(width: 14),
-
-            /// TITLE
             Expanded(
               child: Text(
                 title,
@@ -973,9 +1281,7 @@ Widget _graphStat(String title, String value, Color color, IconData icon) {
     child: Column(
       children: [
         Icon(icon, color: color, size: 22),
-
         const SizedBox(height: 6),
-
         Text(
           value,
           style: TextStyle(
@@ -984,9 +1290,7 @@ Widget _graphStat(String title, String value, Color color, IconData icon) {
             color: color,
           ),
         ),
-
         const SizedBox(height: 2),
-
         Text(
           title,
           style: const TextStyle(
